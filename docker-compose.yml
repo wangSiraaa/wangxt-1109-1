@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tool-borrow-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=tool-borrow-secret-key-2024
+    volumes:
+      - backend-data:/app/data
+    networks:
+      - tool-borrow-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tool-borrow-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - tool-borrow-network
+
+volumes:
+  backend-data:
+
+networks:
+  tool-borrow-network:
+    driver: bridge
