@@ -204,11 +204,15 @@ router.post('/return/:applicationId', authMiddleware, roleMiddleware('technician
       detail: `生成缺件调查单：${reportNo}，关联申请单：${application.application_no}`
     });
 
-    prepare("UPDATE tools SET status = 'investigation_hold', updated_at = CURRENT_TIMESTAMP WHERE id IN (" + 
-      actualItems.filter((item: any) => (item.missing_quantity || 0) > 0)
-        .map(() => '?').join(',') + ")").run(
-      ...actualItems.filter((item: any) => (item.missing_quantity || 0) > 0).map((item: any) => item.tool_id)
-    );
+    const missingToolIds = returnItems
+      .filter((item: any) => (item.missing_quantity || 0) > 0 || (item.return_quantity || 0) === 0)
+      .map((item: any) => item.tool_id);
+    
+    if (missingToolIds.length > 0) {
+      const placeholders = missingToolIds.map(() => '?').join(',');
+      prepare(`UPDATE tools SET status = 'investigation_hold', updated_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`)
+        .run(...missingToolIds);
+    }
 
     logOperation(req.user!, 'return_tools_missing', {
       businessId: returnId,
@@ -221,7 +225,7 @@ router.post('/return/:applicationId', authMiddleware, roleMiddleware('technician
       businessId: returnId,
       businessNo: application.application_no,
       shiftId: shiftId || undefined,
-      detail: `归还工具完成：${application.application_no}，共${actualItems.length}件`
+      detail: `归还工具完成：${application.application_no}，共${returnItems.length}件`
     });
   }
 

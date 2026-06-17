@@ -10,16 +10,29 @@ const router = Router();
 router.get('/pending', authMiddleware, roleMiddleware('admin', 'quality'), (req: Request, res: Response) => {
   const { page = 1, pageSize = 20 } = req.query;
 
-  const statuses = ['approved'];
-  let sql = 'SELECT * FROM borrow_applications WHERE status IN (?, ?)';
-  let countSql = 'SELECT COUNT(*) as total FROM borrow_applications WHERE status IN (?, ?)';
-  
-  const params: any[] = ['approved'];
-  const countParams: any[] = ['approved'];
-  
+  let sql: string;
+  let countSql: string;
+  const params: any[] = [];
+  const countParams: any[] = [];
+
   if (req.user?.role === 'quality') {
-    sql = 'SELECT * FROM borrow_applications WHERE status = ? AND quality_confirmer_id IS NULL';
-    countSql = 'SELECT COUNT(*) as total FROM borrow_applications WHERE status = ? AND quality_confirmer_id IS NULL';
+    sql = `SELECT * FROM borrow_applications 
+           WHERE status = 'approved' 
+             AND quality_confirmer_id IS NULL
+             AND (risk_level != 'high' OR second_confirmer_id IS NOT NULL)`;
+    countSql = `SELECT COUNT(*) as total FROM borrow_applications 
+                WHERE status = 'approved' 
+                  AND quality_confirmer_id IS NULL
+                  AND (risk_level != 'high' OR second_confirmer_id IS NOT NULL)`;
+  } else {
+    sql = `SELECT * FROM borrow_applications 
+           WHERE status = 'approved' 
+             AND quality_confirmer_id IS NOT NULL
+             AND (risk_level != 'high' OR second_confirmer_id IS NOT NULL)`;
+    countSql = `SELECT COUNT(*) as total FROM borrow_applications 
+                WHERE status = 'approved' 
+                  AND quality_confirmer_id IS NOT NULL
+                  AND (risk_level != 'high' OR second_confirmer_id IS NOT NULL)`;
   }
 
   sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -28,11 +41,16 @@ router.get('/pending', authMiddleware, roleMiddleware('admin', 'quality'), (req:
   params.push(limit, offset);
 
   const applications = prepare(sql).all(...params) as BorrowApplication[];
-  const totalResult = prepare(countSql).get(...countParams.slice(0, -2)) as { total: number };
+  const totalResult = prepare(countSql).get(...countParams) as { total: number };
+
+  const appsWithItems = applications.map(app => {
+    const items = prepare('SELECT * FROM borrow_application_items WHERE application_id = ?').all(app.id) as BorrowApplicationItem[];
+    return { ...app, items };
+  });
 
   res.json({
     success: true,
-    data: applications,
+    data: appsWithItems,
     total: totalResult.total || 0
   });
 });

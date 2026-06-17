@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prepare } from '../db';
 import { authMiddleware, roleMiddleware } from '../middleware/auth';
 import { Shift, ShiftType, Tool, BorrowApplication, BorrowApplicationItem } from '../types';
-import { logOperation, getCurrentShiftId } from '../utils/operationLog';
+import { logOperation, getCurrentShiftId, getOperationLogs } from '../utils/operationLog';
 
 const router = Router();
 

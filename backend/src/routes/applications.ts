@@ -353,7 +353,7 @@ router.post('/:id/reject', authMiddleware, roleMiddleware('admin'), (req: Reques
   res.json({ success: true, message: '已驳回' });
 });
 
-router.post('/:id/second-confirm', authMiddleware, roleMiddleware('technician'), (req: Request, res: Response) => {
+router.post('/:id/second-confirm', authMiddleware, roleMiddleware('technician', 'admin'), (req: Request, res: Response) => {
   const { id } = req.params;
 
   const application = prepare('SELECT * FROM borrow_applications WHERE id = ?').get(id) as BorrowApplication | undefined;

@@ -179,14 +179,13 @@ export interface ReturnItem {
   remark?: string;
 }
 
-export type InvestigationStatus = 'pending' | 'investigating' | 'closed';
-
 export interface InvestigationReport {
   id: string;
   report_no: string;
   application_id: string;
   application_no: string;
   return_record_id: string;
+  shift_id?: string;
   reporter_id: string;
   reporter_name: string;
   report_time: string;

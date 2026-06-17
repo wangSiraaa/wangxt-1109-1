@@ -55,16 +55,10 @@ export default function QualityConfirmPage() {
   const loadApplications = async () => {
     setLoading(true);
     try {
-      const response = await applicationsApi.getApplications({
-        status: 'approved',
-        page,
-        pageSize
-      });
-      
+      const response = await applicationsApi.getPendingIssue({ page, pageSize });
       if (response.success) {
-        const filtered = (response.data || []).filter(app => !app.quality_confirmer_id);
-        setApplications(filtered);
-        setTotal(filtered.length);
+        setApplications(response.data || []);
+        setTotal(response.total || 0);
       }
     } catch (error) {
       console.error('Failed to load applications:', error);
