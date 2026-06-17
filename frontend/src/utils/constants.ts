@@ -69,12 +69,14 @@ export const returnStatusColors: Record<ReturnStatus, string> = {
 export const investigationStatusLabels: Record<InvestigationStatus, string> = {
   pending: '待处理',
   investigating: '调查中',
+  quality_review: '待质量复核',
   closed: '已关闭'
 };
 
 export const investigationStatusColors: Record<InvestigationStatus, string> = {
   pending: 'red',
   investigating: 'orange',
+  quality_review: 'purple',
   closed: 'green'
 };
 

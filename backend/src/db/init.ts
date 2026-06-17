@@ -26,7 +26,7 @@ export async function initDatabaseData() {
       risk_level TEXT NOT NULL CHECK(risk_level IN ('low', 'medium', 'high')) DEFAULT 'low',
       calibration_date TEXT,
       calibration_expiry_date TEXT,
-      status TEXT NOT NULL CHECK(status IN ('available', 'borrowed', 'maintenance', 'calibrating', 'scrapped')) DEFAULT 'available',
+      status TEXT NOT NULL CHECK(status IN ('available', 'borrowed', 'maintenance', 'calibrating', 'scrapped', 'investigation_hold')) DEFAULT 'available',
       location TEXT,
       quantity INTEGER DEFAULT 1,
       description TEXT,
@@ -45,6 +45,7 @@ export async function initDatabaseData() {
       purpose TEXT,
       expected_return_date TEXT,
       status TEXT NOT NULL CHECK(status IN ('draft', 'pending_approval', 'approved', 'rejected', 'issued', 'returned', 'partial_returned')) DEFAULT 'draft',
+      shift_id TEXT,
       second_confirmer_id TEXT,
       second_confirmer_name TEXT,
       second_confirm_time TEXT,
@@ -57,7 +58,8 @@ export async function initDatabaseData() {
       remark TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (applicant_id) REFERENCES users(id)
+      FOREIGN KEY (applicant_id) REFERENCES users(id),
+      FOREIGN KEY (shift_id) REFERENCES shifts(id)
     );
 
     CREATE TABLE IF NOT EXISTS borrow_application_items (
@@ -124,7 +126,7 @@ export async function initDatabaseData() {
       reporter_id TEXT NOT NULL,
       reporter_name TEXT NOT NULL,
       report_time TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('pending', 'investigating', 'closed')) DEFAULT 'pending',
+      status TEXT NOT NULL CHECK(status IN ('pending', 'investigating', 'closed', 'quality_review')) DEFAULT 'pending',
       missing_tools TEXT NOT NULL,
       incident_description TEXT,
       investigation_result TEXT,
@@ -132,10 +134,17 @@ export async function initDatabaseData() {
       handler_name TEXT,
       handle_time TEXT,
       handle_remark TEXT,
+      handover_id TEXT,
+      quality_reviewer_id TEXT,
+      quality_reviewer_name TEXT,
+      quality_review_time TEXT,
+      quality_review_result TEXT,
+      quality_review_remark TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (application_id) REFERENCES borrow_applications(id),
-      FOREIGN KEY (return_record_id) REFERENCES return_records(id)
+      FOREIGN KEY (return_record_id) REFERENCES return_records(id),
+      FOREIGN KEY (handover_id) REFERENCES shift_handovers(id)
     );
 
     CREATE TABLE IF NOT EXISTS calibration_records (
@@ -154,11 +163,78 @@ export async function initDatabaseData() {
       FOREIGN KEY (tool_id) REFERENCES tools(id)
     );
 
+    CREATE TABLE IF NOT EXISTS shifts (
+      id TEXT PRIMARY KEY,
+      shift_name TEXT NOT NULL,
+      shift_type TEXT NOT NULL CHECK(shift_type IN ('day', 'night', 'middle')) DEFAULT 'day',
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      leader_id TEXT,
+      leader_name TEXT,
+      status TEXT NOT NULL CHECK(status IN ('active', 'ended')) DEFAULT 'active',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (leader_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shift_handovers (
+      id TEXT PRIMARY KEY,
+      handover_no TEXT UNIQUE NOT NULL,
+      from_shift_id TEXT NOT NULL,
+      to_shift_id TEXT NOT NULL,
+      from_user_id TEXT NOT NULL,
+      from_user_name TEXT NOT NULL,
+      to_user_id TEXT NOT NULL,
+      to_user_name TEXT NOT NULL,
+      handover_time TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'confirmed', 'rejected')) DEFAULT 'pending',
+      tool_snapshot TEXT,
+      remark TEXT,
+      confirmed_time TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (from_shift_id) REFERENCES shifts(id),
+      FOREIGN KEY (to_shift_id) REFERENCES shifts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shift_handover_items (
+      id TEXT PRIMARY KEY,
+      handover_id TEXT NOT NULL,
+      tool_id TEXT NOT NULL,
+      tool_code TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL CHECK(status IN ('normal', 'missing', 'damaged', 'investigation_hold')) DEFAULT 'normal',
+      investigation_id TEXT,
+      remark TEXT,
+      FOREIGN KEY (handover_id) REFERENCES shift_handovers(id) ON DELETE CASCADE,
+      FOREIGN KEY (tool_id) REFERENCES tools(id),
+      FOREIGN KEY (investigation_id) REFERENCES investigation_reports(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS operation_logs (
+      id TEXT PRIMARY KEY,
+      operation_type TEXT NOT NULL,
+      business_id TEXT,
+      business_no TEXT,
+      operator_id TEXT NOT NULL,
+      operator_name TEXT NOT NULL,
+      operator_role TEXT NOT NULL,
+      shift_id TEXT,
+      detail TEXT,
+      result TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE INDEX IF NOT EXISTS idx_tools_status ON tools(status);
     CREATE INDEX IF NOT EXISTS idx_tools_calibration_expiry ON tools(calibration_expiry_date);
     CREATE INDEX IF NOT EXISTS idx_borrow_applications_status ON borrow_applications(status);
     CREATE INDEX IF NOT EXISTS idx_borrow_applications_applicant ON borrow_applications(applicant_id);
     CREATE INDEX IF NOT EXISTS idx_investigation_reports_status ON investigation_reports(status);
+    CREATE INDEX IF NOT EXISTS idx_shifts_status ON shifts(status);
+    CREATE INDEX IF NOT EXISTS idx_shift_handovers_status ON shift_handovers(status);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_type ON operation_logs(operation_type);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_time ON operation_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_operator ON operation_logs(operator_id);
   `);
 
   const userCount = prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
@@ -310,6 +386,50 @@ export async function initDatabaseData() {
       'D区-01',
       2,
       '液压千斤顶'
+    );
+  }
+
+  const shiftCount = prepare('SELECT COUNT(*) as count FROM shifts').get() as { count: number };
+  if (shiftCount.count === 0) {
+    const insertShift = prepare(`
+      INSERT INTO shifts (id, shift_name, shift_type, start_time, end_time, leader_id, leader_name, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    insertShift.run(
+      'shift_001',
+      `${todayStr} 白班`,
+      'day',
+      `${todayStr} 08:00`,
+      `${todayStr} 16:00`,
+      'user_002',
+      '李管理员',
+      'active'
+    );
+
+    insertShift.run(
+      'shift_002',
+      `${todayStr} 中班`,
+      'middle',
+      `${todayStr} 16:00`,
+      `${todayStr} 00:00`,
+      'user_004',
+      '赵机务',
+      'active'
+    );
+
+    insertShift.run(
+      'shift_003',
+      `${todayStr} 夜班`,
+      'night',
+      `${todayStr} 00:00`,
+      `${todayStr} 08:00`,
+      'user_001',
+      '张机务',
+      'ended'
     );
   }
 

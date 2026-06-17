@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { prepare } from '../db';
 import { authMiddleware, roleMiddleware } from '../middleware/auth';
-import { BorrowApplication, BorrowApplicationItem, Tool } from '../types';
+import { BorrowApplication, BorrowApplicationItem, Tool, Shift } from '../types';
+import { logOperation, getCurrentShiftId } from '../utils/operationLog';
 
 const router = Router();
 
@@ -115,13 +116,14 @@ router.post('/', authMiddleware, roleMiddleware('technician'), (req: Request, re
 
   const applicationId = uuidv4();
   const applicationNo = generateApplicationNo();
+  const shiftId = getCurrentShiftId();
 
   const insertApplication = prepare(`
     INSERT INTO borrow_applications (
       id, application_no, applicant_id, applicant_name,
       work_order_no, work_type, risk_level, purpose,
-      expected_return_date, status, remark
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+      expected_return_date, status, remark, shift_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
   `);
 
   insertApplication.run(
@@ -134,8 +136,16 @@ router.post('/', authMiddleware, roleMiddleware('technician'), (req: Request, re
     risk_level || null,
     purpose || null,
     expected_return_date || null,
-    remark || null
+    remark || null,
+    shiftId
   );
+
+  logOperation(req.user!, 'create_application', {
+    businessId: applicationId,
+    businessNo: applicationNo,
+    shiftId: shiftId || undefined,
+    detail: `创建借用申请单，共${items.length}件工具`
+  });
 
   const insertItem = prepare(`
     INSERT INTO borrow_application_items (
@@ -264,6 +274,13 @@ router.post('/:id/submit', authMiddleware, roleMiddleware('technician'), (req: R
 
   prepare("UPDATE borrow_applications SET status = 'pending_approval', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
 
+  logOperation(req.user!, 'submit_application', {
+    businessId: id,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `提交借用申请单：${application.application_no}`
+  });
+
   res.json({ success: true, message: '提交成功' });
 });
 
@@ -290,6 +307,13 @@ router.post('/:id/approve', authMiddleware, roleMiddleware('admin'), (req: Reque
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(req.user!.userId, req.user!.name, id);
+
+  logOperation(req.user!, 'approve_application', {
+    businessId: id,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `审批通过申请单：${application.application_no}`
+  });
 
   res.json({ success: true, message: '审批通过' });
 });
@@ -318,6 +342,13 @@ router.post('/:id/reject', authMiddleware, roleMiddleware('admin'), (req: Reques
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(req.user!.userId, req.user!.name, remark || null, id);
+
+  logOperation(req.user!, 'reject_application', {
+    businessId: id,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `驳回申请单：${application.application_no}，原因：${remark || '未说明'}`
+  });
 
   res.json({ success: true, message: '已驳回' });
 });
@@ -355,6 +386,13 @@ router.post('/:id/second-confirm', authMiddleware, roleMiddleware('technician'),
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(req.user!.userId, req.user!.name, id);
+
+  logOperation(req.user!, 'second_confirm_application', {
+    businessId: id,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `高风险维修双人确认：${application.application_no}`
+  });
 
   res.json({ success: true, message: '双人确认成功' });
 });

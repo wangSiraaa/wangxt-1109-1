@@ -8,8 +8,11 @@ import {
   ReturnRecord, 
   ReturnItem,
   InvestigationReport,
-  Tool 
+  Tool,
+  InvestigationStatus,
+  ToolStatus 
 } from '../types';
+import { logOperation, getCurrentShiftId } from '../utils/operationLog';
 
 const router = Router();
 
@@ -166,6 +169,8 @@ router.post('/return/:applicationId', authMiddleware, roleMiddleware('technician
     }
   }
 
+  const shiftId = getCurrentShiftId();
+  
   let newStatus = 'returned';
   if (hasMissing) {
     newStatus = 'partial_returned';
@@ -175,21 +180,49 @@ router.post('/return/:applicationId', authMiddleware, roleMiddleware('technician
     
     prepare(`
       INSERT INTO investigation_reports (
-        id, report_no, application_id, application_no, return_record_id,
+        id, report_no, application_id, application_no, return_record_id, shift_id,
         reporter_id, reporter_name, report_time, status, missing_tools, incident_description
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `).run(
       reportId,
       reportNo,
       applicationId,
       application.application_no,
       returnId,
+      shiftId,
       req.user!.userId,
       req.user!.name,
       returnTime,
       missingTools.join(', '),
       `工具归还时发现缺件，涉及工具：${missingTools.join(', ')}`
     );
+
+    logOperation(req.user!, 'create_investigation_report', {
+      businessId: reportId,
+      businessNo: reportNo,
+      shiftId: shiftId || undefined,
+      detail: `生成缺件调查单：${reportNo}，关联申请单：${application.application_no}`
+    });
+
+    prepare("UPDATE tools SET status = 'investigation_hold', updated_at = CURRENT_TIMESTAMP WHERE id IN (" + 
+      actualItems.filter((item: any) => (item.missing_quantity || 0) > 0)
+        .map(() => '?').join(',') + ")").run(
+      ...actualItems.filter((item: any) => (item.missing_quantity || 0) > 0).map((item: any) => item.tool_id)
+    );
+
+    logOperation(req.user!, 'return_tools_missing', {
+      businessId: returnId,
+      businessNo: application.application_no,
+      shiftId: shiftId || undefined,
+      detail: `归还工具缺件，申请单：${application.application_no}，缺件工具：${missingTools.join(', ')}`
+    });
+  } else {
+    logOperation(req.user!, 'return_tools', {
+      businessId: returnId,
+      businessNo: application.application_no,
+      shiftId: shiftId || undefined,
+      detail: `归还工具完成：${application.application_no}，共${actualItems.length}件`
+    });
   }
 
   prepare(`

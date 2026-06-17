@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { prepare } from '../db';
 import { authMiddleware, roleMiddleware } from '../middleware/auth';
-import { InvestigationReport } from '../types';
+import { InvestigationReport, InvestigationStatus } from '../types';
+import { logOperation, getCurrentShiftId } from '../utils/operationLog';
 
 const router = Router();
 
@@ -138,7 +139,123 @@ router.post('/:id/close', authMiddleware, roleMiddleware('admin', 'quality'), (r
     id
   );
 
+  logOperation(req.user!, 'close_investigation_report', {
+    businessId: id,
+    businessNo: report.report_no,
+    shiftId: report.shift_id || undefined,
+    detail: `关闭调查单：${report.report_no}，调查结果：${investigation_result || '未填写'}`
+  });
+
   res.json({ success: true, message: '调查单已关闭' });
+});
+
+router.post('/:id/submit-investigation', authMiddleware, roleMiddleware('admin'), (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { investigation_result, handle_remark } = req.body;
+
+  const report = prepare('SELECT * FROM investigation_reports WHERE id = ?').get(id) as InvestigationReport | undefined;
+  
+  if (!report) {
+    return res.json({ success: false, message: '调查单不存在' });
+  }
+
+  if (report.status !== 'pending' && report.status !== 'investigating') {
+    return res.json({ success: false, message: '仅待处理或调查中状态可提交调查结果' });
+  }
+
+  if (!investigation_result) {
+    return res.json({ success: false, message: '请填写调查结果' });
+  }
+
+  prepare(`
+    UPDATE investigation_reports SET 
+      status = 'quality_review',
+      investigation_result = ?,
+      handle_remark = ?,
+      handler_id = ?,
+      handler_name = ?,
+      handle_time = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    investigation_result,
+    handle_remark || null,
+    req.user!.userId,
+    req.user!.name,
+    id
+  );
+
+  logOperation(req.user!, 'submit_investigation_result', {
+    businessId: id,
+    businessNo: report.report_no,
+    shiftId: report.shift_id || undefined,
+    detail: `提交调查结果：${report.report_no}，调查结果：${investigation_result}`
+  });
+
+  res.json({ success: true, message: '调查结果已提交，请质量员复核' });
+});
+
+router.post('/:id/quality-review', authMiddleware, roleMiddleware('quality'), (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { passed, review_remark } = req.body;
+
+  const report = prepare('SELECT * FROM investigation_reports WHERE id = ?').get(id) as InvestigationReport | undefined;
+  
+  if (!report) {
+    return res.json({ success: false, message: '调查单不存在' });
+  }
+
+  if (report.status !== 'quality_review') {
+    return res.json({ success: false, message: '仅待质量复核状态可执行此操作' });
+  }
+
+  if (passed === undefined) {
+    return res.json({ success: false, message: '请选择复核结果' });
+  }
+
+  const newStatus = passed ? 'closed' : 'investigating';
+  const shiftId = getCurrentShiftId();
+
+  prepare(`
+    UPDATE investigation_reports SET 
+      status = ?,
+      quality_reviewer_id = ?,
+      quality_reviewer_name = ?,
+      quality_review_time = CURRENT_TIMESTAMP,
+      quality_review_remark = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    newStatus,
+    req.user!.userId,
+    req.user!.name,
+    review_remark || null,
+    id
+  );
+
+  const returnItems = prepare(`
+    SELECT ri.tool_id FROM return_items ri
+    INNER JOIN return_records rr ON ri.return_record_id = rr.id
+    WHERE rr.application_id = ? AND ri.status = 'missing'
+  `).all(report.application_id) as { tool_id: string }[];
+
+  if (passed && returnItems.length > 0) {
+    const toolIds = returnItems.map((item: any) => item.tool_id);
+    prepare("UPDATE tools SET status = 'available', updated_at = CURRENT_TIMESTAMP WHERE id IN (" + 
+      toolIds.map(() => '?').join(',') + ")").run(...toolIds);
+  }
+
+  logOperation(req.user!, 'quality_review_investigation', {
+    businessId: id,
+    businessNo: report.report_no,
+    shiftId: shiftId || report.shift_id || undefined,
+    detail: `质量员${passed ? '通过' : '驳回'}复核：${report.report_no}，复核意见：${review_remark || '无'}`
+  });
+
+  res.json({ 
+    success: true, 
+    message: passed ? '复核通过，工具状态已恢复可借' : '复核驳回，请重新调查' 
+  });
 });
 
 export default router;

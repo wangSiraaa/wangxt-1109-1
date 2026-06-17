@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prepare } from '../db';
 import { authMiddleware, roleMiddleware } from '../middleware/auth';
 import { BorrowApplication, BorrowApplicationItem, IssueRecord, Tool } from '../types';
+import { logOperation, getCurrentShiftId } from '../utils/operationLog';
 
 const router = Router();
 
@@ -97,6 +98,13 @@ router.post('/quality-confirm/:applicationId', authMiddleware, roleMiddleware('q
     WHERE id = ?
   `).run(req.user!.userId, req.user!.name, applicationId);
 
+  logOperation(req.user!, 'quality_confirm_calibration', {
+    businessId: applicationId,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `质量员校准确认完成：${application.application_no}，共${items.length}件工具`
+  });
+
   res.json({ success: true, message: '校准确认完成' });
 });
 
@@ -175,6 +183,13 @@ router.post('/issue/:applicationId', authMiddleware, roleMiddleware('admin'), (r
   prepare(`
     UPDATE borrow_applications SET status = 'issued', updated_at = CURRENT_TIMESTAMP WHERE id = ?
   `).run(applicationId);
+
+  logOperation(req.user!, 'issue_tools', {
+    businessId: applicationId,
+    businessNo: application.application_no,
+    shiftId: application.shift_id || undefined,
+    detail: `工具发放完成：${application.application_no}，共${actualItems.length}件工具`
+  });
 
   res.json({ success: true, message: '发放成功', data: { issue_id: issueId } });
 });

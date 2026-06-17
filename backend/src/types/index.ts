@@ -12,7 +12,74 @@ export interface User {
 }
 
 export type ToolRiskLevel = 'low' | 'medium' | 'high';
-export type ToolStatus = 'available' | 'borrowed' | 'maintenance' | 'calibrating' | 'scrapped';
+export type ToolStatus = 'available' | 'borrowed' | 'maintenance' | 'calibrating' | 'scrapped' | 'investigation_hold';
+
+export type ShiftType = 'day' | 'night' | 'middle';
+export type ShiftStatus = 'active' | 'ended';
+
+export interface Shift {
+  id: string;
+  shift_name: string;
+  shift_type: ShiftType;
+  start_time: string;
+  end_time: string;
+  leader_id?: string;
+  leader_name?: string;
+  status: ShiftStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type HandoverStatus = 'pending' | 'confirmed' | 'rejected';
+
+export interface ShiftHandover {
+  id: string;
+  handover_no: string;
+  from_shift_id: string;
+  to_shift_id: string;
+  from_user_id: string;
+  from_user_name: string;
+  to_user_id: string;
+  to_user_name: string;
+  handover_time: string;
+  status: HandoverStatus;
+  tool_snapshot?: string;
+  remark?: string;
+  confirmed_time?: string;
+  created_at: string;
+  updated_at: string;
+  items?: ShiftHandoverItem[];
+}
+
+export type HandoverItemStatus = 'normal' | 'missing' | 'damaged' | 'investigation_hold';
+
+export interface ShiftHandoverItem {
+  id: string;
+  handover_id: string;
+  tool_id: string;
+  tool_code: string;
+  tool_name: string;
+  quantity: number;
+  status: HandoverItemStatus;
+  investigation_id?: string;
+  remark?: string;
+}
+
+export interface OperationLog {
+  id: string;
+  operation_type: string;
+  business_id?: string;
+  business_no?: string;
+  operator_id: string;
+  operator_name: string;
+  operator_role: UserRole;
+  shift_id?: string;
+  detail?: string;
+  result?: string;
+  created_at: string;
+}
+
+export type InvestigationStatus = 'pending' | 'investigating' | 'quality_review' | 'closed';
 
 export interface Tool {
   id: string;
@@ -44,6 +111,7 @@ export interface BorrowApplication {
   purpose?: string;
   expected_return_date?: string;
   status: ApplicationStatus;
+  shift_id?: string;
   second_confirmer_id?: string;
   second_confirmer_name?: string;
   second_confirm_time?: string;

@@ -21,6 +21,14 @@ export const investigationApi = {
 
   closeReport: (id: string, investigation_result?: string, handle_remark?: string) => {
     return api.post<any, ApiResponse>(`/investigation/${id}/close`, { investigation_result, handle_remark });
+  },
+
+  submitInvestigation: (id: string, investigation_result: string, handle_remark?: string) => {
+    return api.post<any, ApiResponse>(`/investigation/${id}/submit-investigation`, { investigation_result, handle_remark });
+  },
+
+  qualityReview: (id: string, passed: boolean, review_remark?: string) => {
+    return api.post<any, ApiResponse>(`/investigation/${id}/quality-review`, { passed, review_remark });
   }
 };
 

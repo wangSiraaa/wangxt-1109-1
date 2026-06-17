@@ -12,6 +12,9 @@ import QualityConfirmPage from './pages/QualityConfirmPage';
 import ReturnPage from './pages/ReturnPage';
 import InvestigationList from './pages/InvestigationList';
 import CalibrationPage from './pages/CalibrationPage';
+import ShiftManagementPage from './pages/ShiftManagementPage';
+import ShiftHandoverPage from './pages/ShiftHandoverPage';
+import PipelineViewPage from './pages/PipelineViewPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -94,6 +97,24 @@ function App() {
       <Route path="/calibration" element={
         <ProtectedRoute>
           <CalibrationPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/shifts" element={
+        <ProtectedRoute>
+          <ShiftManagementPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/handover" element={
+        <ProtectedRoute>
+          <ShiftHandoverPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/pipeline" element={
+        <ProtectedRoute>
+          <PipelineViewPage />
         </ProtectedRoute>
       } />
 

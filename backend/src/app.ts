@@ -9,6 +9,7 @@ import issueRouter from './routes/issue';
 import returnRouter from './routes/return';
 import investigationRouter from './routes/investigation';
 import calibrationRouter from './routes/calibration';
+import shiftsRouter from './routes/shifts';
 import { authMiddleware } from './middleware/auth';
 import { prepare } from './db';
 
@@ -26,6 +27,7 @@ app.use('/api/issue', issueRouter);
 app.use('/api/return', returnRouter);
 app.use('/api/investigation', investigationRouter);
 app.use('/api/calibration', calibrationRouter);
+app.use('/api/shifts', shiftsRouter);
 
 app.get('/api/stats/dashboard', authMiddleware, (req, res) => {
   const today = new Date().toISOString().split('T')[0];
